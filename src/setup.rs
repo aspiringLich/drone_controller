@@ -1,7 +1,13 @@
 use bevy::prelude::*;
-use bevy_prototype_lyon::prelude::*;
+use bevy_prototype_lyon::prelude::{FillMode, *};
+use bevy_rapier2d::prelude::*;
 use lazy_static::lazy_static;
-use std::f32::consts::{PI, TAU};
+use std::{
+    convert::identity,
+    f32::consts::{PI, TAU},
+};
+
+use crate::AIR_RESISTANCE;
 
 lazy_static! {
     static ref ROUNDED_STROKE_OPTIONS: StrokeOptions = {
@@ -42,12 +48,6 @@ const THRUSTER_RADIUS: f32 = D_SIZE / 3.0;
 const NOZZLE_LEN: f32 = D_SIZE * 0.3;
 
 pub fn spawn_drone(commands: &mut Commands) {
-    draw_drone(commands);
-}
-
-fn setup_drone_physics(commands: &mut Commands) {}
-
-fn draw_drone(commands: &mut Commands) {
     let shell_color = Color::rgb_u8(99, 155, 255);
     let shell_draw_mode = rounded_draw_mode(LINE_WIDTH, shell_color, shell_color);
 
@@ -62,16 +62,17 @@ fn draw_drone(commands: &mut Commands) {
 
     let outer_shell = {
         let mut outer_shell = PathBuilder::new();
-        outer_shell.move_to(start_pos * D_SIZE * EYE_SIZE);
-        outer_shell.arc(Vec2::ZERO, Vec2::ONE * D_SIZE * EYE_SIZE, SHELL_ANGLE, 1.0);
-        outer_shell.line_to(outer_shell.current_position() / EYE_SIZE * SHELL_SIZE);
+        // outer_shell.move_to(start_pos * D_SIZE * EYE_SIZE);
+        // outer_shell.arc(Vec2::ZERO, Vec2::ONE * D_SIZE * EYE_SIZE, SHELL_ANGLE, 1.0);
+        outer_shell.line_to(start_pos * D_SIZE * SHELL_SIZE);
         outer_shell.arc(
             Vec2::ZERO,
             Vec2::ONE * D_SIZE * SHELL_SIZE,
-            -SHELL_ANGLE,
+            SHELL_ANGLE,
             1.0,
         );
-        outer_shell.line_to(start_pos * D_SIZE * EYE_SIZE);
+        outer_shell.line_to(Vec2::ZERO);
+        outer_shell.line_to(start_pos * D_SIZE * SHELL_SIZE);
         outer_shell.build()
     };
     let main_body = shapes::Circle {
@@ -134,146 +135,142 @@ fn draw_drone(commands: &mut Commands) {
         origin: RectangleOrigin::Center,
     };
 
+    fn spawn_geometry<'a>(
+        commands: &mut Commands,
+        shape: &impl Geometry,
+        draw_mode: DrawMode,
+        translation: Vec3,
+        name: &'a str,
+    ) -> Entity {
+        let name = name.to_string();
+        commands
+            .spawn_bundle(GeometryBuilder::build_as(
+                shape,
+                draw_mode,
+                Transform {
+                    translation,
+                    ..default()
+                },
+            ))
+            .insert(Name::new(name))
+            .id()
+    };
+
     let mut ids: Vec<Entity> = vec![];
-    let mut id;
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
-            &outer_shell,
-            shell_draw_mode,
-            Transform {
-                translation: Vec3::new(0., 0., 0.8),
-                ..default()
-            },
-        ))
-        .insert(Name::new("drone_outer_shell.geometry"))
-        .id();
-    ids.push(id);
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
-            &main_body,
-            rounded_draw_mode(0., Color::BLACK, Color::GRAY),
-            Transform {
-                translation: Vec3::new(0., 0., 0.7),
-                ..default()
-            },
-        ))
-        .insert(Name::new("drone_main_body.geometry"))
-        .id();
-    ids.push(id);
+    ids.push(spawn_geometry(
+        commands,
+        &outer_shell,
+        shell_draw_mode,
+        Vec3::new(0., 0., 0.8),
+        "drone_outer_shell.geo",
+    ));
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
-            &eye,
-            rounded_draw_mode(0., Color::BLACK, Color::GREEN),
-            Transform {
-                translation: Vec3::new(0., 0., 0.9),
-                ..default()
-            },
-        ))
-        .insert(Name::new("drone_eye.geometry"))
-        .id();
-    ids.push(id);
+    ids.push(spawn_geometry(
+        commands,
+        &main_body,
+        DrawMode::Fill(FillMode::color(Color::GRAY)),
+        Vec3::new(0., 0., 0.7),
+        "drone_main_body.geo",
+    ));
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
-            &frame,
-            DrawMode::Stroke(frame_stroke_mode),
-            Transform {
-                translation: Vec3::new(0., 0., 0.5),
-                ..default()
-            },
-        ))
-        .insert(Name::new("drone_frame.geometry"))
-        .id();
-    ids.push(id);
+    ids.push(spawn_geometry(
+        commands,
+        &eye,
+        DrawMode::Fill(FillMode::color(Color::GREEN)),
+        Vec3::new(0., 0., 0.9),
+        "drone_eye.geo",
+    ));
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
-            &frame_pad,
-            DrawMode::Stroke(frame_pad_stroke_mode),
-            Transform {
-                translation: Vec3::new(0., 0., 0.6),
-                ..default()
-            },
-        ))
-        .insert(Name::new("drone_frame_pad.geometry"))
-        .id();
-    ids.push(id);
+    ids.push(spawn_geometry(
+        commands,
+        &frame,
+        DrawMode::Stroke(frame_stroke_mode),
+        Vec3::new(0., 0., 0.5),
+        "drone_frame.geo",
+    ));
 
-    let thrusterid = commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                translation: Vec3::new(-THRUSTER_DISTANCE, 0.0, 0.8),
-                ..default()
-            },
-            ..default()
-        })
-        .insert(Name::new("drone_thruster_l.parent"))
-        .id();
-    ids.push(thrusterid);
+    ids.push(spawn_geometry(
+        commands,
+        &frame_pad,
+        DrawMode::Stroke(frame_pad_stroke_mode),
+        Vec3::new(0., 0., 0.6),
+        "drone_frame_pad.geo",
+    ));
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
+    let mut spawn_thruster = |index: usize| {
+        let translation = [
+            Vec3::new(-THRUSTER_DISTANCE, 0.0, 0.8),
+            Vec3::new(THRUSTER_DISTANCE, 0.0, 0.8),
+        ];
+        let iden_char = ["l", "r"];
+
+        let thrusterid = commands
+            .spawn_bundle(SpriteBundle {
+                transform: Transform {
+                    translation: translation[index],
+                    ..default()
+                },
+                sprite: Sprite {
+                    custom_size: Some(Vec2::ZERO),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(Name::new(format!(
+                "drone_thruster_{}.parent",
+                iden_char[index]
+            )))
+            .id();
+
+        let id = spawn_geometry(
+            commands,
             &thruster_ball,
             shell_draw_mode,
-            Transform::default(),
-        ))
-        .insert(Name::new("drone_thruster_l_ball.geometry"))
-        .id();
-    commands.entity(thrusterid).add_child(id);
+            Vec3::ZERO,
+            &format!("drone_thruster_{}_ball.geo", iden_char[index]),
+        );
+        commands.entity(thrusterid).add_child(id);
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
+        let id = spawn_geometry(
+            commands,
             &thruster_nozzle,
-            rounded_draw_mode(0., Color::BLACK, Color::GRAY),
-            Transform {
-                translation: Vec3::new(0., -THRUSTER_RADIUS, -0.01),
-                ..default()
-            },
-        ))
-        .insert(Name::new("drone_thruster_l_nozzle.geometry"))
-        .id();
-    commands.entity(thrusterid).add_child(id);
+            DrawMode::Fill(FillMode::color(Color::GRAY)),
+            Vec3::new(0., -THRUSTER_RADIUS, -0.1),
+            &format!("drone_thruster_{}_nozzle.geo", iden_char[index]),
+        );
+        commands.entity(thrusterid).add_child(id);
 
-    let thrusterid = commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                translation: Vec3::new(THRUSTER_DISTANCE, 0.0, 0.8),
-                ..default()
-            },
-            ..default()
-        })
-        .insert(Name::new("drone_thruster_r.parent"))
-        .id();
-    ids.push(thrusterid);
+        return thrusterid;
+    };
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
-            &thruster_ball,
-            shell_draw_mode,
-            Transform::default(),
-        ))
-        .insert(Name::new("drone_thruster_r_ball.geometry"))
-        .id();
-    commands.entity(thrusterid).add_child(id);
+    ids.push(spawn_thruster(0));
+    ids.push(spawn_thruster(1));
 
-    id = commands
-        .spawn_bundle(GeometryBuilder::build_as(
-            &thruster_nozzle,
-            rounded_draw_mode(0., Color::BLACK, Color::GRAY),
-            Transform {
-                translation: Vec3::new(0., -THRUSTER_RADIUS, -0.01),
-                ..default()
-            },
-        ))
-        .insert(Name::new("drone_thruster_r_nozzle.geometry"))
-        .id();
-    commands.entity(thrusterid).add_child(id);
-
-    commands
+    let droneid = commands
         .spawn()
         .insert(Name::new("drone.parent"))
         .insert_bundle(SpriteBundle::default())
-        .push_children(ids.as_slice());
+        .push_children(ids.as_slice())
+        .id();
+
+    // * PHYSICS SHMISICS * //
+    commands
+        .entity(droneid)
+        .insert(RigidBody::Dynamic)
+        .insert(Collider::compound(vec![
+            (Vec2::ZERO, 0.0, Collider::ball(D_SIZE)),
+            (
+                Vec2::X * THRUSTER_DISTANCE,
+                0.0,
+                Collider::ball(THRUSTER_RADIUS),
+            ),
+            (
+                Vec2::X * -THRUSTER_DISTANCE,
+                0.0,
+                Collider::ball(THRUSTER_RADIUS),
+            ),
+        ]))
+        .insert(Velocity::zero())
+        .insert(AIR_RESISTANCE);
 }
