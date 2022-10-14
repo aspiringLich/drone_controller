@@ -14,7 +14,7 @@ use setup::*;
 mod thruster;
 use thruster::*;
 
-pub const SCALE: f32 = 30.0;
+pub const PHYS_SCALE: f32 = 256.0;
 pub const AIR_RESISTANCE: Damping = Damping {
     linear_damping: 1.003,
     angular_damping: 0.0,
@@ -31,11 +31,12 @@ fn main() {
         .init_resource::<ThrusterInfo>()
         .init_resource::<DroneEntities>()
         // default setup plugins
-        .add_plugin(RapierPhysicsPlugin::<NoUserData>::default().with_physics_scale(30.0))
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::default().with_physics_scale(PHYS_SCALE))
         .add_plugins(DefaultPlugins)
         .add_plugin(DebugLinesPlugin::default())
         .add_plugin(WorldInspectorPlugin::new())
         .add_plugin(ShapePlugin)
+        .add_plugin(RapierDebugRenderPlugin::default())
         .add_startup_system(spawn)
         // systems
         .add_system(apply_thruster_force)

@@ -28,7 +28,7 @@ pub fn apply_thruster_force(
     let rotation = transform.rotation.mul_vec3(Vec3::X).truncate();
     let translation = transform.translation;
 
-    let lthruster = entities.lthruster;
+    let lthruster = entities.thruster_l_phys;
     let l_transform = q_transform.get(lthruster).unwrap();
     let l_rotation = l_transform
         .rotation
@@ -41,7 +41,7 @@ pub fn apply_thruster_force(
     // let rthruster = entities.rthruster;
     // let r_rotation = q_transform.get(rthruster).unwrap().rotation.z + rotation - PI / 2.0;
 
-    let l_force = (l_rotation * FORCE / 10.0).rotate(Vec2::Y);
+    let l_force = (l_rotation).rotate(Vec2::Y);
     lines.line(
         l_translation,
         l_translation + Vec3::new(l_force.x, l_force.y, 0.0),

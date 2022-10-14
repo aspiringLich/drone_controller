@@ -7,22 +7,11 @@ use std::{
     f32::consts::{PI, TAU},
 };
 
-use crate::AIR_RESISTANCE;
+use crate::{AIR_RESISTANCE, PHYS_SCALE};
 
 /// marks the main drone entity for easy Querying
 #[derive(Component)]
 pub struct DroneMarker;
-
-pub struct DroneEntities {
-    pub drone: Entity,
-    pub lthruster: Entity,
-    pub rthruster: Entity,
-}
-impl Default for DroneEntities {
-    fn default() -> Self {
-        unsafe { std::mem::zeroed() }
-    }
-}
 
 lazy_static! {
     static ref ROUNDED_STROKE_OPTIONS: StrokeOptions = {
@@ -61,9 +50,6 @@ const THRUSTER_DISTANCE: f32 = D_SIZE * 3.;
 const FRAME_HEIGHT: f32 = D_SIZE * 0.8;
 const THRUSTER_RADIUS: f32 = D_SIZE / 3.0;
 const NOZZLE_LEN: f32 = D_SIZE * 0.3;
-
-//* SOME PHYSICS CONSTANTS IDK *//
-pub const FORCE: f32 = D_SIZE * D_SIZE;
 
 pub fn spawn_drone(commands: &mut Commands, mut entities: ResMut<DroneEntities>) {
     let shell_color = Color::rgb_u8(99, 155, 255);
@@ -231,7 +217,29 @@ pub fn spawn_drone(commands: &mut Commands, mut entities: ResMut<DroneEntities>)
         ];
         let iden_char = ["l", "r"];
 
-        let thrusterid = commands
+        let nozzle = spawn_geometry(
+            commands,
+            &thruster_nozzle,
+            DrawMode::Fill(FillMode::color(Color::GRAY)),
+            Vec3::new(0.0, -THRUSTER_RADIUS, -0.1),
+            &format!("drone_thruster_{}_nozzle.geo", iden_char[index]),
+        );
+        commands.entity(droneid).add_child(nozzle);
+
+        let id = spawn_geometry(
+            commands,
+            &thruster_ball,
+            shell_draw_mode,
+            translation[index],
+            &format!("drone_thruster_{}_ball.geo", iden_char[index]),
+        );
+        commands.entity(droneid).add_child(id);
+        commands.entity(id).add_child(nozzle);
+
+        let joint = RevoluteJointBuilder::new()
+            .local_anchor1(translation[index].truncate())
+            .local_anchor2(Vec2::ZERO);
+        let phys_id = commands
             .spawn_bundle(SpriteBundle {
                 transform: Transform {
                     translation: translation[index],
@@ -244,57 +252,48 @@ pub fn spawn_drone(commands: &mut Commands, mut entities: ResMut<DroneEntities>)
                 ..default()
             })
             .insert(Name::new(format!(
-                "drone_thruster_{}.parent",
+                "drone_thruster_{}.phys",
                 iden_char[index]
             )))
-            .id();
-
-        let id = spawn_geometry(
-            commands,
-            &thruster_ball,
-            shell_draw_mode,
-            Vec3::ZERO,
-            &format!("drone_thruster_{}_ball.geo", iden_char[index]),
-        );
-        commands.entity(thrusterid).add_child(id);
-
-        let id = spawn_geometry(
-            commands,
-            &thruster_nozzle,
-            DrawMode::Fill(FillMode::color(Color::GRAY)),
-            Vec3::new(0., -THRUSTER_RADIUS, -0.1),
-            &format!("drone_thruster_{}_nozzle.geo", iden_char[index]),
-        );
-
-        let joint = RevoluteJointBuilder::new()
-            .local_anchor1(translation[index].truncate())
-            .local_anchor2(Vec2::ZERO);
-        commands
-            .entity(thrusterid)
-            .add_child(id)
             .insert(RigidBody::Dynamic)
             .insert(Collider::ball(THRUSTER_RADIUS))
-            .insert(ImpulseJoint::new(droneid, joint));
+            .insert(ImpulseJoint::new(droneid, joint))
+            .id();
+        commands.entity(droneid).add_child(phys_id);
 
-        return thrusterid;
+        return (phys_id, id);
     };
 
-    let lthruster = spawn_thruster(0);
-    let rthruster = spawn_thruster(1);
+    let (thruster_l_phys, nozzle_l) = spawn_thruster(0);
+    let (thruster_r_phys, nozzle_r) = spawn_thruster(1);
 
     *entities = DroneEntities {
         drone: droneid,
-        lthruster,
-        rthruster,
+        thruster_l_phys,
+        thruster_r_phys,
+        nozzle_l,
+        nozzle_r,
     };
 
     // * PHYSICS SHMISICS * //
     commands
         .entity(droneid)
-        .push_children(&[lthruster, rthruster])
         .insert(RigidBody::Dynamic)
         .insert(Collider::ball(D_SIZE))
         .insert(Velocity::zero())
         .insert(AIR_RESISTANCE)
         .insert(ExternalForce::default());
+}
+
+pub struct DroneEntities {
+    pub drone: Entity,
+    pub thruster_l_phys: Entity,
+    pub thruster_r_phys: Entity,
+    pub nozzle_l: Entity,
+    pub nozzle_r: Entity,
+}
+impl Default for DroneEntities {
+    fn default() -> Self {
+        unsafe { std::mem::zeroed() }
+    }
 }
